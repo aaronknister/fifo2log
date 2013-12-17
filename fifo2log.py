@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import signal
 import stat
 import os
 import argparse
@@ -7,6 +8,7 @@ import sys
 
 ROTATELOGS="/usr/sbin/rotatelogs"
 VERBOSE=False
+CHILDREN_PIDS=[]
 
 class StrToOctal(argparse.Action):
   def __call__(self, parser, namespace, values, option_string=None):
@@ -62,8 +64,22 @@ def set_umask(umask):
   orig_umask=os.umask(0)
   debug("Changing umask to %s from %s" % (oct(umask),oct(orig_umask)))
   os.umask(umask)
-  
+
+def signal_handler(signum,frame):
+  print "Caught signal %d. Killing children..." % signum
+  for pid in CHILDREN_PIDS:
+    print "\tKilling child pid %d" % pid
+    os.kill(pid,signal.SIGKILL)
+
+  sys.exit(1)
+
+def set_signal_handler():
+  for sig in [signal.SIGINT,signal.SIGHUP,signal.SIGQUIT,signal.SIGTERM]:
+    signal.signal(sig,signal_handler)
+
 if __name__ == "__main__":
+  set_signal_handler()
+
   args=parse_args()
   VERBOSE=args.verbose
 
@@ -71,4 +87,5 @@ if __name__ == "__main__":
   fifo_f=init_fifo(args.fifo)
   rotate_arg=args.seconds or args.size
   rlogs_p=init_rotatelogs(args.rotatelogs,args.logfile,rotate_arg,fifo_f.fileno())
+  CHILDREN_PIDS.append(rlogs_p.pid)
   rlogs_p.wait()
